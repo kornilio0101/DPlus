@@ -23,7 +23,7 @@ DPlus is a high-performance, professional video downloader for Windows. It provi
 ### For Users
 The latest **Portable Windows version** is available in the [GitHub Releases](https://github.com/Kornilio/DPlus/releases) section.
 
-1. Download `DPlus_Portable_x.x.x.exe`.
+1. Download `DPlus_x.x.x.exe`.
 2. Run the application.
 3. Paste your video link and hit **Download**.
 4. Select your preferred **Quality** and **Filename**.
