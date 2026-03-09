@@ -33,7 +33,7 @@ If you wish to build DPlus from source:
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Kornilio/DPlus.git
+   git clone https://github.com/Kornilio0101/DPlus.git
    cd DPlus/dplus
    ```
 
