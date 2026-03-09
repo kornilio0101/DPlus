@@ -2,7 +2,7 @@
 
 DPlus is a simple video downloader for Windows. It provides a seamless experience for downloading videos from major platforms including YouTube, Twitter (X), Facebook, and Instagram.
 
-![DPlus Preview](./preview.jpg)
+![DPlus Preview](./preview_.jpg)
 
 ## 🚀 Features
 
