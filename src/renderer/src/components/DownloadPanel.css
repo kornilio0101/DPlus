@@ -14,9 +14,7 @@
   transition: transform 0.3s ease;
 }
 
-.download-panel:hover {
-  transform: translateY(-5px);
-}
+.download-panel:hover {}
 
 .input-group {
   display: flex;
@@ -53,7 +51,6 @@ button {
 }
 
 button:hover:not(:disabled) {
-  transform: scale(1.05);
   box-shadow: 0 0 20px rgba(100, 108, 255, 0.4);
 }
 
@@ -63,40 +60,60 @@ button:disabled {
 }
 
 .progress-container {
-  height: 12px;
-  background: rgba(0,0,0,0.2);
-  border-radius: 6px;
+  margin-top: 30px;
+  width: 100%;
+}
+
+.progress-bar-wrapper {
+  width: 100%;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
   overflow: hidden;
   position: relative;
-  margin-top: 1rem;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #60a5fa, #f472b6);
-  transition: width 0.3s ease;
+  background: linear-gradient(90deg, #6366f1, #a855f7, #ec4899);
+  transition: width 0.3s ease-out;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  min-width: 40px;
 }
 
-.progress-text {
-  position: absolute;
-  right: 0;
-  top: -20px;
+.progress-percentage-inner {
+  color: white;
   font-size: 0.8rem;
-  color: var(--text-muted);
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.progress-status-text {
+  display: block;
+  text-align: center;
+  margin-top: 10px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
 }
 
 .status-msg {
+  margin-top: 20px;
+  font-weight: 600;
   text-align: center;
-  font-weight: 500;
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn 0.3s ease-out;
 }
 
-.status-msg.success { color: #4ade80; }
-.status-msg.error { color: #f87171; }
+.status-msg.success {
+  color: #4ade80;
+}
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+.status-msg.error {
+  color: #f87171;
 }
 
 /* Modal Styles */
@@ -106,66 +123,181 @@ button:disabled {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(8px);
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s ease;
+  animation: fadeIn 0.3s ease-out;
 }
 
 .modal-content {
-  background: #1e293b;
-  border: 1px solid var(--glass-border);
-  border-radius: 20px;
-  padding: 2rem;
+  background: rgb(15, 23, 42);
+  /* 100% opaque background */
+  padding: 30px;
+  border-radius: 24px;
   width: 90%;
   max-width: 450px;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-  animation: slideUp 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  animation: slideUp 0.3s ease-out;
 }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+.modal-content.glass {
+  background: rgb(30, 41, 59);
+  /* 100% opaque glass-themed background */
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
 }
 
 .modal-content h3 {
+  margin-bottom: 10px;
   font-size: 1.5rem;
-  color: white;
+  background: linear-gradient(to right, #6366f1, #a855f7);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .modal-content p {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 20px;
   font-size: 0.9rem;
 }
 
-.modal-content input {
+.quality-selection h3 {
+  margin-bottom: 20px;
+}
+
+.format-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 5px;
+}
+
+.format-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.format-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.format-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  cursor: pointer;
   width: 100%;
+  text-align: left;
+}
+
+.format-item:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.format-item .res {
+  font-weight: 600;
+  color: white;
+}
+
+.format-item .ext {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+}
+
+.filename-step input {
+  width: 100%;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: white;
+  margin-bottom: 20px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.loader-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 0;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top: 4px solid #6366f1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .modal-actions {
   display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
+  gap: 15px;
 }
 
-.modal-actions button {
+.confirm-btn,
+.cancel-btn {
+  padding: 12px 0;
   flex: 1;
-  padding: 0.8rem;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.confirm-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  border: none;
+}
+
+.confirm-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4);
 }
 
 .cancel-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+.cancel-btn.full {
+  width: 100%;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
   transform: none;
-  box-shadow: none;
+}
+
+a {
+  color: rgb(223, 116, 223);
 }

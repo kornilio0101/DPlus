@@ -51,8 +51,8 @@ app.on('window-all-closed', () => {
 import { spawn } from 'child_process'
 
 // IPC handlers for downloading
-ipcMain.handle('download-video', async (event, { url, filename }) => {
-  console.log('Download requested for:', url, 'with filename:', filename)
+ipcMain.handle('download-video', async (event, { url, filename, format }) => {
+  console.log('Download requested for:', url, 'with filename:', filename, 'format:', format)
   
   const downloadsPath = join(app.getPath('downloads'), 'DPlus')
   if (!fs.existsSync(downloadsPath)) {
@@ -64,14 +64,10 @@ ipcMain.handle('download-video', async (event, { url, filename }) => {
   let ytDlpPath = path.normalize(ytDlpConstants.YOUTUBE_DL_PATH)
   
   if (app.isPackaged) {
-    // More robust replacement for packaged environments
     ytDlpPath = ytDlpPath.replace(/[\\/]app\.asar[\\/]/i, (match) => match.replace('app.asar', 'app.asar.unpacked'))
   }
   
-  console.log('Final yt-dlp path:', ytDlpPath)
-
   if (!fs.existsSync(ytDlpPath)) {
-    console.error('yt-dlp binary search failed at:', ytDlpPath)
     return { success: false, message: `Downloader binary not found at: ${ytDlpPath}` }
   }
 
@@ -79,10 +75,14 @@ ipcMain.handle('download-video', async (event, { url, filename }) => {
     ? join(downloadsPath, `${filename}.%(ext)s`)
     : join(downloadsPath, '%(title)s.%(ext)s')
 
+  // Use selected format or best quality
+  const formatArg = format || 'bestvideo+bestaudio/best'
+
   return new Promise((resolve) => {
     try {
       const process = spawn(ytDlpPath, [
         url,
+        '-f', formatArg,
         '-o', outputTemplate,
         '--no-check-certificate',
         '--no-warnings',
@@ -90,23 +90,24 @@ ipcMain.handle('download-video', async (event, { url, filename }) => {
       ])
 
       process.on('error', (err) => {
-        console.error('Failed to spawn yt-dlp:', err)
         resolve({ success: false, message: `Failed to start downloader: ${err.message}` })
       })
 
       process.stdout.on('data', (data) => {
-        const line = data.toString()
-        const match = line.match(/(\d+(\.\d+)?)%/)
-        if (match) {
-          const progress = parseFloat(match[1])
-          event.sender.send('download-progress', progress)
+        const text = data.toString()
+        const matches = text.matchAll(/(\d+(\.\d+)?)%/g)
+        let lastProgress = -1
+        for (const match of matches) {
+          lastProgress = parseFloat(match[1])
+        }
+        if (lastProgress !== -1) {
+          event.sender.send('download-progress', lastProgress)
         }
       })
 
       let stderr = ''
       process.stderr.on('data', (data) => {
         stderr += data.toString()
-        console.error(`yt-dlp stderr: ${data}`)
       })
 
       process.on('close', (code) => {
@@ -114,18 +115,16 @@ ipcMain.handle('download-video', async (event, { url, filename }) => {
           shell.openPath(downloadsPath)
           resolve({ success: true, message: 'Download finished' })
         } else {
-          console.error('yt-dlp failed with code', code, 'stderr:', stderr)
           resolve({ success: false, message: stderr || `Download failed with code ${code}` })
         }
       })
     } catch (err: any) {
-      console.error('Synchronous spawn error:', err)
       resolve({ success: false, message: `Spawn error: ${err.message}` })
     }
   })
 })
 
-ipcMain.handle('get-video-title', async (_event, url) => {
+ipcMain.handle('get-video-metadata', async (_event, url) => {
   const ytDlpConstants = require('yt-dlp-exec/src/constants')
   let ytDlpPath = path.normalize(ytDlpConstants.YOUTUBE_DL_PATH)
 
@@ -135,24 +134,45 @@ ipcMain.handle('get-video-title', async (_event, url) => {
 
   return new Promise((resolve) => {
     try {
-      const process = spawn(ytDlpPath, [url, '--get-title', '--no-check-certificate'])
-      let title = ''
+      // Fetch JSON metadata which includes formats and title
+      const process = spawn(ytDlpPath, [url, '-j', '--no-check-certificate'])
+      let output = ''
       process.stdout.on('data', (data) => {
-        title += data.toString()
+        output += data.toString()
       })
       process.on('error', (err) => {
-        console.error('Failed to spawn title fetcher:', err)
-        resolve({ success: false, message: `Spawn error: ${err.message}` })
+        resolve({ success: false, message: `Metadata fetch error: ${err.message}` })
       })
       process.on('close', (code) => {
         if (code === 0) {
-          resolve({ success: true, title: title.trim() })
+          try {
+            const data = JSON.parse(output)
+            const formats = data.formats
+              .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple')
+              .map((f: any) => ({
+                id: f.format_id as string,
+                label: (f.resolution || f.format_note || f.format) as string,
+                ext: f.ext as string,
+                filesize: f.filesize as number
+              }))
+              // Remove duplicates and keep unique resolutions
+              .filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.label === v.label) === i)
+              .reverse() // Often best quality is at the end or starts at certain point
+
+            resolve({ 
+              success: true, 
+              title: data.title,
+              formats: formats.slice(0, 10) // Limit to top 10 formats for clarity
+            })
+          } catch (e) {
+            resolve({ success: false, message: 'Failed to parse metadata' })
+          }
         } else {
-          resolve({ success: false, message: 'Could not fetch title' })
+          resolve({ success: false, message: 'Could not fetch metadata' })
         }
       })
     } catch (err: any) {
-      resolve({ success: false, message: `Title fetch error: ${err.message}` })
+      resolve({ success: false, message: `Metadata spawn error: ${err.message}` })
     }
   })
 })
