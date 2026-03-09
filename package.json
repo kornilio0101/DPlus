@@ -1,0 +1,80 @@
+{
+  "name": "dplus",
+  "version": "1.0.0",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-vite build && electron-builder"
+  },
+  "build": {
+    "appId": "com.kornilio.dplus",
+    "productName": "DPlus",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "${productName}_Portable_${version}.${ext}"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/yt-dlp-exec/bin/*"
+    ],
+    "files": [
+      "out/**/*",
+      "package.json",
+      "node_modules/yt-dlp-exec/**/*",
+      "node_modules/dargs/**/*",
+      "node_modules/execa/**/*",
+      "node_modules/is-unix/**/*",
+      "node_modules/mkdirp/**/*",
+      "node_modules/node-fetch/**/*",
+      "node_modules/cross-spawn/**/*",
+      "node_modules/path-key/**/*",
+      "node_modules/shebang-command/**/*",
+      "node_modules/shebang-regex/**/*",
+      "node_modules/which/**/*",
+      "node_modules/strip-final-newline/**/*",
+      "node_modules/npm-run-path/**/*",
+      "node_modules/onetime/**/*",
+      "node_modules/mimic-fn/**/*",
+      "node_modules/human-signals/**/*",
+      "node_modules/is-stream/**/*",
+      "node_modules/signal-exit/**/*",
+      "node_modules/get-stream/**/*",
+      "node_modules/merge-stream/**/*"
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@electron-toolkit/eslint-config-ts": "^3.1.0",
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@types/node": "^20.19.37",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "electron": "32.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "env-cmd": "^11.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "yt-dlp-exec": "^1.0.2"
+  }
+}

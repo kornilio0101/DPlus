@@ -1,0 +1,8 @@
+node_modules
+dist
+out
+.electron-vite
+*.log
+.DS_Store
+build/icon.png
+# Keep only source and config
