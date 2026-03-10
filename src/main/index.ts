@@ -54,7 +54,10 @@ import { spawn } from 'child_process'
 ipcMain.handle('download-video', async (event, { url, filename, format }) => {
   console.log('Download requested for:', url, 'with filename:', filename, 'format:', format)
   
-  const downloadsPath = join(app.getPath('downloads'), 'DPlus')
+  const now = new Date()
+  const dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`
+  const downloadsPath = join(app.getPath('downloads'), 'DPlus', dateStr)
+  
   if (!fs.existsSync(downloadsPath)) {
     fs.mkdirSync(downloadsPath, { recursive: true })
   }
@@ -134,8 +137,8 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
 
   return new Promise((resolve) => {
     try {
-      // Fetch JSON metadata which includes formats and title
-      const process = spawn(ytDlpPath, [url, '-j', '--no-check-certificate'])
+      // Use --flat-playlist to quickly check if it's a playlist and get its entries
+      const process = spawn(ytDlpPath, [url, '-j', '--flat-playlist', '--no-check-certificate'])
       let output = ''
       process.stdout.on('data', (data) => {
         output += data.toString()
@@ -147,23 +150,42 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
         if (code === 0) {
           try {
             const data = JSON.parse(output)
-            const formats = data.formats
-              .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple')
-              .map((f: any) => ({
-                id: f.format_id as string,
-                label: (f.resolution || f.format_note || f.format) as string,
-                ext: f.ext as string,
-                filesize: f.filesize as number
+            
+            // Check if it's a playlist or a single video
+            const isPlaylist = data._type === 'playlist' || (data.entries && Array.isArray(data.entries))
+            
+            if (isPlaylist) {
+              const entries = data.entries.map((entry: any) => ({
+                id: entry.id || entry.url,
+                title: entry.title,
+                url: entry.url || `https://www.youtube.com/watch?v=${entry.id}`
               }))
-              // Remove duplicates and keep unique resolutions
-              .filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.label === v.label) === i)
-              .reverse() // Often best quality is at the end or starts at certain point
+              resolve({
+                success: true,
+                isPlaylist: true,
+                title: data.title || 'Playlist',
+                entries: entries
+              })
+            } else {
+              // Single video
+              const formats = data.formats
+                .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple')
+                .map((f: any) => ({
+                  id: f.format_id as string,
+                  label: (f.resolution || f.format_note || f.format) as string,
+                  ext: f.ext as string,
+                  filesize: f.filesize as number
+                }))
+                .filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.label === v.label) === i)
+                .reverse()
 
-            resolve({ 
-              success: true, 
-              title: data.title,
-              formats: formats.slice(0, 10) // Limit to top 10 formats for clarity
-            })
+              resolve({ 
+                success: true, 
+                isPlaylist: false,
+                title: data.title,
+                formats: formats.slice(0, 10)
+              })
+            }
           } catch (e) {
             resolve({ success: false, message: 'Failed to parse metadata' })
           }
@@ -175,5 +197,70 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
       resolve({ success: false, message: `Metadata spawn error: ${err.message}` })
     }
   })
+})
+
+ipcMain.handle('download-batch', async (event, { videos, qualityPreference }) => {
+  const now = new Date()
+  const dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`
+  const downloadsPath = join(app.getPath('downloads'), 'DPlus', dateStr)
+  
+  if (!fs.existsSync(downloadsPath)) {
+    fs.mkdirSync(downloadsPath, { recursive: true })
+  }
+
+  const ytDlpConstants = require('yt-dlp-exec/src/constants')
+  let ytDlpPath = path.normalize(ytDlpConstants.YOUTUBE_DL_PATH)
+  if (app.isPackaged) {
+    ytDlpPath = ytDlpPath.replace(/[\\/]app\.asar[\\/]/i, (match) => match.replace('app.asar', 'app.asar.unpacked'))
+  }
+
+  // Quality preference logic
+  const height = qualityPreference || '1080'
+  const filter = `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
+
+  let completed = 0
+  const total = videos.length
+
+  for (const video of videos) {
+    const outputTemplate = join(downloadsPath, `${video.title}.%(ext)s`)
+    
+    await new Promise((resolve) => {
+      try {
+        const process = spawn(ytDlpPath, [
+          video.url,
+          '-f', filter,
+          '-o', outputTemplate,
+          '--no-check-certificate',
+          '--no-warnings',
+          '--progress'
+        ])
+
+        process.stdout.on('data', (data) => {
+          const text = data.toString()
+          const matches = text.matchAll(/(\d+(\.\d+)?)%/g)
+          let lastProgress = -1
+          for (const match of matches) {
+            lastProgress = parseFloat(match[1])
+          }
+          if (lastProgress !== -1) {
+            // Send overall progress: (finished items + current item progress) / total
+            const overallProgress = ((completed + (lastProgress / 100)) / total) * 100
+            event.sender.send('download-progress', overallProgress)
+          }
+        })
+
+        process.on('close', () => {
+          completed++
+          resolve(true)
+        })
+      } catch (err) {
+        completed++
+        resolve(false)
+      }
+    })
+  }
+
+  shell.openPath(downloadsPath)
+  return { success: true, message: 'Batch download finished' }
 })
 

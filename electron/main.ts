@@ -50,7 +50,10 @@ app.whenReady().then(createWindow)
 ipcMain.handle('download-video', async (event, url) => {
   console.log('Download requested for:', url)
   
-  const downloadsPath = join(app.getPath('downloads'), 'DPlus')
+  const now = new Date()
+  const dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`
+  const downloadsPath = join(app.getPath('downloads'), 'DPlus', dateStr)
+  
   if (!fs.existsSync(downloadsPath)) {
     fs.mkdirSync(downloadsPath, { recursive: true })
   }

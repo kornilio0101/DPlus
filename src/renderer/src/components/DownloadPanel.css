@@ -301,3 +301,116 @@ button:disabled {
 a {
   color: rgb(223, 116, 223);
 }
+
+/* Playlist Specific Styles */
+.playlist-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-width: 600px;
+  width: 100vw;
+}
+
+.playlist-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.quality-pref {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.quality-pref label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.quality-pref select {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: white;
+  outline: none;
+  cursor: pointer;
+}
+
+.selection-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.selection-actions button {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.selection-actions button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: none;
+}
+
+.video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.video-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.video-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.video-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 15px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.video-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.video-item.selected {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.video-item span {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}

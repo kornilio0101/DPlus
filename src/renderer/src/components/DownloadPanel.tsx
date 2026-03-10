@@ -9,9 +9,14 @@ const DownloadPanel: React.FC = () => {
   const [showModal, setShowModal] = useState(false)
   const filenameInputRef = useRef<HTMLInputElement>(null)
 
+  const [isPlaylist, setIsPlaylist] = useState(false)
+  const [playlistEntries, setPlaylistEntries] = useState<{ id: string; title: string; url: string }[]>([])
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set())
+  const [qualityPreference, setQualityPreference] = useState('1080')
+
   const [formats, setFormats] = useState<{ id: string; label: string; ext: string }[]>([])
   const [selectedFormat, setSelectedFormat] = useState<string>('')
-  const [modalStep, setModalStep] = useState<'quality' | 'filename'>('quality')
+  const [modalStep, setModalStep] = useState<'quality' | 'filename' | 'playlist'>('quality')
   const [isFetchingMetadata, setIsFetchingMetadata] = useState(false)
 
   const [errorMessage, setErrorMessage] = useState('')
@@ -34,17 +39,27 @@ const DownloadPanel: React.FC = () => {
   const handleDownloadClick = async () => {
     if (!url) return
     setShowModal(true)
-    setModalStep('quality')
     setIsFetchingMetadata(true)
     setFormats([])
+    setPlaylistEntries([])
+    setIsPlaylist(false)
     
     try {
       const result = await (window as any).ipcRenderer.invoke('get-video-metadata', url)
       if (result.success) {
-        setFormats(result.formats)
-        setFilename(result.title)
+        if (result.isPlaylist) {
+          setIsPlaylist(true)
+          setPlaylistEntries(result.entries)
+          setSelectedVideoIds(new Set(result.entries.map((e: any) => e.id))) // Select all by default
+          setModalStep('playlist')
+        } else {
+          setIsPlaylist(false)
+          setFormats(result.formats)
+          setFilename(result.title)
+          setModalStep('quality')
+        }
       } else {
-        setErrorMessage(result.message || 'Could not fetch video info.')
+        setErrorMessage(result.message || 'Could not fetch info.')
         setShowModal(false)
       }
     } catch (err) {
@@ -55,9 +70,47 @@ const DownloadPanel: React.FC = () => {
     }
   }
 
+  const toggleVideoSelection = (id: string) => {
+    const newSelection = new Set(selectedVideoIds)
+    if (newSelection.has(id)) {
+      newSelection.delete(id)
+    } else {
+      newSelection.add(id)
+    }
+    setSelectedVideoIds(newSelection)
+  }
+
   const selectQuality = (id: string) => {
     setSelectedFormat(id)
     setModalStep('filename')
+  }
+
+  const startBatchDownload = async () => {
+    setShowModal(false)
+    setStatus('loading')
+    setProgress(0)
+    setErrorMessage('')
+
+    const selectedVideos = playlistEntries.filter(e => selectedVideoIds.has(e.id))
+
+    try {
+      const result = await (window as any).ipcRenderer.invoke('download-batch', {
+        videos: selectedVideos,
+        qualityPreference
+      })
+      if (result.success) {
+        setStatus('success')
+        setUrl('')
+        setTimeout(() => setStatus('idle'), 3000)
+      } else {
+        setStatus('error')
+        setErrorMessage(result.message || 'Batch download failed.')
+      }
+    } catch (err: any) {
+      console.error(err)
+      setStatus('error')
+      setErrorMessage(err.message || 'Unknown error occurred.')
+    }
   }
 
   const confirmDownload = async () => {
@@ -96,7 +149,7 @@ const DownloadPanel: React.FC = () => {
       <div className="input-group">
         <input 
           type="text" 
-          placeholder="Paste video link here..." 
+          placeholder="Paste video or playlist link here..." 
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           disabled={status === 'loading'}
@@ -116,7 +169,9 @@ const DownloadPanel: React.FC = () => {
               <span className="progress-percentage-inner">{progress}%</span>
             </div>
           </div>
-          <span className="progress-status-text">Downloading... {progress}%</span>
+          <span className="progress-status-text">
+            {isPlaylist ? `Batch Progress... ${progress}%` : `Downloading... ${progress}%`}
+          </span>
         </div>
       )}
 
@@ -129,7 +184,42 @@ const DownloadPanel: React.FC = () => {
             {isFetchingMetadata ? (
               <div className="loader-container">
                 <div className="spinner"></div>
-                <p>Fetching video qualities...</p>
+                <p>Fetching info...</p>
+              </div>
+            ) : modalStep === 'playlist' ? (
+              <div className="playlist-selection">
+                <h3>Select Videos from Playlist</h3>
+                <div className="playlist-controls">
+                   <div className="quality-pref">
+                     <label>Quality Preference:</label>
+                     <select value={qualityPreference} onChange={(e) => setQualityPreference(e.target.value)}>
+                       <option value="2160">4K (2160p)</option>
+                       <option value="1440">2K (1440p)</option>
+                       <option value="1080">Full HD (1080p)</option>
+                       <option value="720">HD (720p)</option>
+                       <option value="480">480p</option>
+                       <option value="360">360p</option>
+                     </select>
+                   </div>
+                   <div className="selection-actions">
+                     <button onClick={() => setSelectedVideoIds(new Set(playlistEntries.map(e => e.id)))}>Select All</button>
+                     <button onClick={() => setSelectedVideoIds(new Set())}>Deselect All</button>
+                   </div>
+                </div>
+                <div className="video-list">
+                  {playlistEntries.map((video) => (
+                    <div key={video.id} className={`video-item ${selectedVideoIds.has(video.id) ? 'selected' : ''}`} onClick={() => toggleVideoSelection(video.id)}>
+                      <input type="checkbox" checked={selectedVideoIds.has(video.id)} readOnly />
+                      <span>{video.title}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="modal-actions">
+                  <button className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
+                  <button className="confirm-btn" onClick={startBatchDownload} disabled={selectedVideoIds.size === 0}>
+                    Download {selectedVideoIds.size} Videos
+                  </button>
+                </div>
               </div>
             ) : modalStep === 'quality' ? (
               <div className="quality-selection">
