@@ -89,7 +89,8 @@ ipcMain.handle('download-video', async (event, { url, filename, format }) => {
         '-o', outputTemplate,
         '--no-check-certificate',
         '--no-warnings',
-        '--progress'
+        '--progress',
+        '--extractor-args', 'youtube:player_client=android,web'
       ])
 
       process.on('error', (err) => {
@@ -136,22 +137,31 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
   }
 
   return new Promise((resolve) => {
-    try {
-      // Use --flat-playlist to quickly check if it's a playlist and get its entries
-      const process = spawn(ytDlpPath, [url, '-j', '--flat-playlist', '--no-check-certificate'])
+    const fetchMetadata = (useFlatPlaylist: boolean) => {
+      const args = [url, '-j', '--no-check-certificate', '--extractor-args', 'youtube:player_client=android,web']
+      if (useFlatPlaylist) {
+        args.push('--flat-playlist')
+      }
+
+      const process = spawn(ytDlpPath, args)
       let output = ''
+      let errorOutput = ''
+
       process.stdout.on('data', (data) => {
         output += data.toString()
       })
+      process.stderr.on('data', (data) => {
+        errorOutput += data.toString()
+      })
+
       process.on('error', (err) => {
         resolve({ success: false, message: `Metadata fetch error: ${err.message}` })
       })
+
       process.on('close', (code) => {
         if (code === 0) {
           try {
             const data = JSON.parse(output)
-            
-            // Check if it's a playlist or a single video
             const isPlaylist = data._type === 'playlist' || (data.entries && Array.isArray(data.entries))
             
             if (isPlaylist) {
@@ -167,8 +177,7 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
                 entries: entries
               })
             } else {
-              // Single video
-              const formats = data.formats
+              const formats = (data.formats || [])
                 .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple')
                 .map((f: any) => ({
                   id: f.format_id as string,
@@ -187,12 +196,24 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
               })
             }
           } catch (e) {
-            resolve({ success: false, message: 'Failed to parse metadata' })
+            if (useFlatPlaylist) {
+              fetchMetadata(false)
+            } else {
+              resolve({ success: false, message: 'Failed to parse metadata' })
+            }
           }
         } else {
-          resolve({ success: false, message: 'Could not fetch metadata' })
+          if (useFlatPlaylist) {
+            fetchMetadata(false)
+          } else {
+            resolve({ success: false, message: errorOutput || 'Could not fetch metadata' })
+          }
         }
       })
+    }
+
+    try {
+      fetchMetadata(true)
     } catch (err: any) {
       resolve({ success: false, message: `Metadata spawn error: ${err.message}` })
     }
@@ -232,7 +253,8 @@ ipcMain.handle('download-batch', async (event, { videos, qualityPreference }) =>
           '-o', outputTemplate,
           '--no-check-certificate',
           '--no-warnings',
-          '--progress'
+          '--progress',
+          '--extractor-args', 'youtube:player_client=android,web'
         ])
 
         process.stdout.on('data', (data) => {
