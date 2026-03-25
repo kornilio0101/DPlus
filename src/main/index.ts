@@ -1,9 +1,26 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
-import path, { join } from 'path'
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { join, resolve as pathResolve } from 'path'
 import ytDlp from 'yt-dlp-exec'
 import fs from 'fs'
+import { spawn } from 'child_process'
+
+const isDev = !app.isPackaged;
+
+// Robust path resolution for yt-dlp binary and ffmpeg
+const ytDlpPath = isDev
+  ? pathResolve('node_modules/yt-dlp-exec/bin/yt-dlp.exe')
+  : join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe');
+
+const ffmpegPath = isDev
+  ? pathResolve('node_modules/ffmpeg-static/ffmpeg.exe')
+  : join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg.exe');
 
 // isDev will be checked inside functions
+function sanitizeFilename(filename: string): string {
+  // Replace forbidden characters with spaces or underscores
+  // Forbidden on Windows: / \ : * ? " < > |
+  return filename.replace(/[\\\/:*?"<>|]/g, ' ').substring(0, 150).trim();
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -48,7 +65,6 @@ app.on('window-all-closed', () => {
   }
 })
 
-import { spawn } from 'child_process'
 
 // IPC handlers for downloading
 ipcMain.handle('download-video', async (event, { url, filename, format }) => {
@@ -62,20 +78,16 @@ ipcMain.handle('download-video', async (event, { url, filename, format }) => {
     fs.mkdirSync(downloadsPath, { recursive: true })
   }
 
-  // Robust path resolution for yt-dlp binary
-  const ytDlpConstants = require('yt-dlp-exec/src/constants')
-  let ytDlpPath = path.normalize(ytDlpConstants.YOUTUBE_DL_PATH)
-  
-  if (app.isPackaged) {
-    ytDlpPath = ytDlpPath.replace(/[\\/]app\.asar[\\/]/i, (match) => match.replace('app.asar', 'app.asar.unpacked'))
-  }
-  
   if (!fs.existsSync(ytDlpPath)) {
     return { success: false, message: `Downloader binary not found at: ${ytDlpPath}` }
   }
+  if (!fs.existsSync(ffmpegPath)) {
+    return { success: false, message: `FFmpeg binary not found at: ${ffmpegPath}` }
+  }
 
-  const outputTemplate = filename 
-    ? join(downloadsPath, `${filename}.%(ext)s`)
+  const safeFilename = filename ? sanitizeFilename(filename) : null;
+  const outputTemplate = safeFilename 
+    ? join(downloadsPath, `${safeFilename}.%(ext)s`)
     : join(downloadsPath, '%(title)s.%(ext)s')
 
   // Use selected format or best quality
@@ -90,6 +102,7 @@ ipcMain.handle('download-video', async (event, { url, filename, format }) => {
         '--no-check-certificate',
         '--no-warnings',
         '--progress',
+        '--ffmpeg-location', ffmpegPath,
         '--extractor-args', 'youtube:player_client=android,web'
       ])
 
@@ -129,16 +142,13 @@ ipcMain.handle('download-video', async (event, { url, filename, format }) => {
 })
 
 ipcMain.handle('get-video-metadata', async (_event, url) => {
-  const ytDlpConstants = require('yt-dlp-exec/src/constants')
-  let ytDlpPath = path.normalize(ytDlpConstants.YOUTUBE_DL_PATH)
-
-  if (app.isPackaged) {
-    ytDlpPath = ytDlpPath.replace(/[\\/]app\.asar[\\/]/i, (match) => match.replace('app.asar', 'app.asar.unpacked'))
+  if (!fs.existsSync(ytDlpPath)) {
+    return { success: false, message: `Downloader binary not found at: ${ytDlpPath}` }
   }
 
   return new Promise((resolve) => {
     const fetchMetadata = (useFlatPlaylist: boolean) => {
-      const args = [url, '-j', '--no-check-certificate', '--extractor-args', 'youtube:player_client=android,web']
+      const args = [url, '-j', '--no-check-certificate', '--dump-single-json', '--extractor-args', 'youtube:player_client=android,web']
       if (useFlatPlaylist) {
         args.push('--flat-playlist')
       }
@@ -161,55 +171,114 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
       process.on('close', (code) => {
         if (code === 0) {
           try {
-            const data = JSON.parse(output)
-            const isPlaylist = data._type === 'playlist' || (data.entries && Array.isArray(data.entries))
+            const lines = output.trim().split(/\r?\n/).filter(line => line.startsWith('{'));
             
-            if (isPlaylist) {
-              const entries = data.entries.map((entry: any) => ({
-                id: entry.id || entry.url,
-                title: entry.title,
-                url: entry.url || `https://www.youtube.com/watch?v=${entry.id}`
-              }))
-              resolve({
-                success: true,
-                isPlaylist: true,
-                title: data.title || 'Playlist',
-                entries: entries
-              })
-            } else {
-              const formats = (data.formats || [])
-                .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple')
-                .map((f: any) => ({
-                  id: f.format_id as string,
-                  label: (f.resolution || f.format_note || f.format) as string,
-                  ext: f.ext as string,
-                  filesize: f.filesize as number
-                }))
-                .filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.label === v.label) === i)
-                .reverse()
+            if (lines.length === 0) {
+              if (useFlatPlaylist) return fetchMetadata(false);
+              return resolve({ success: false, message: 'No metadata found' });
+            }
 
-              resolve({ 
-                success: true, 
-                isPlaylist: false,
-                title: data.title,
-                formats: formats.slice(0, 10)
-              })
+            if (lines.length > 1) {
+              // Handle multi-line output (multiple separate JSON objects)
+              const rawEntries = lines.map((line, index) => {
+                const entry = JSON.parse(line);
+                const isTwitter = entry.extractor === 'twitter' || entry.extractor_key === 'Twitter' || url.includes('x.com') || url.includes('twitter.com');
+                
+                return {
+                  id: entry.id || entry.url || `index-${index}`,
+                  title: entry.title || `Video ${index + 1}`,
+                  url: isTwitter ? url : (entry.url || url),
+                  thumbnail: entry.thumbnail || (entry.thumbnails && entry.thumbnails.length > 0 ? entry.thumbnails[entry.thumbnails.length - 1].url : null),
+                  index: entry.playlist_index || index + 1
+                };
+              });
+
+              // Deduplicate by id
+              const seen = new Set();
+              const entries = rawEntries.filter(e => {
+                if (seen.has(e.id)) return false;
+                seen.add(e.id);
+                return true;
+              });
+
+              if (entries.length === 1) {
+                // Single unique video — treat as single video, not playlist
+                const single = entries[0];
+                resolve({
+                  success: true,
+                  isPlaylist: false,
+                  title: single.title,
+                  formats: [],
+                  thumbnail: single.thumbnail
+                });
+              } else {
+                resolve({
+                  success: true,
+                  isPlaylist: true,
+                  title: 'Playlist',
+                  entries: entries
+                });
+              }
+            } else {
+              // Standard single JSON object output
+              const data = JSON.parse(lines[0]);
+              const isPlaylist = data._type === 'playlist' || (data.entries && Array.isArray(data.entries));
+              
+              if (isPlaylist && data.entries && data.entries.length > 0) {
+                const isTwitter = data.extractor === 'twitter' || data.extractor_key === 'Twitter' || url.includes('x.com') || url.includes('twitter.com');
+                
+                const entries = data.entries.map((entry: any, index: number) => ({
+                  id: entry.id || entry.url || `index-${index}`,
+                  title: entry.title || `Video ${index + 1}`,
+                  url: isTwitter ? url : (entry.url || entry.webpage_url || url),
+                  thumbnail: entry.thumbnail || (entry.thumbnails && entry.thumbnails.length > 0 ? entry.thumbnails[entry.thumbnails.length - 1].url : null),
+                  index: entry.playlist_index || index + 1
+                }));
+                resolve({
+                  success: true,
+                  isPlaylist: true,
+                  title: data.title || 'Playlist',
+                  entries: entries
+                });
+              } else if (isPlaylist && (!data.entries || data.entries.length === 0) && useFlatPlaylist) {
+                // If it claims to be a playlist but has no entries, try non-flat
+                fetchMetadata(false);
+              } else {
+                // Single video or playlist with no entries treated as single
+                const formats = (data.formats || [])
+                  .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple')
+                  .map((f: any) => ({
+                    id: f.format_id as string,
+                    label: (f.resolution || f.format_note || f.format) as string,
+                    ext: f.ext as string,
+                    filesize: f.filesize as number
+                  }))
+                  .filter((v: any, i: number, a: any[]) => a.findIndex((t: any) => t.label === v.label) === i)
+                  .reverse();
+
+                resolve({ 
+                  success: true, 
+                  isPlaylist: false,
+                  title: data.title,
+                  formats: formats.slice(0, 10)
+                });
+              }
             }
           } catch (e) {
             if (useFlatPlaylist) {
-              fetchMetadata(false)
+              fetchMetadata(false);
             } else {
-              resolve({ success: false, message: 'Failed to parse metadata' })
+              resolve({ success: false, message: 'Failed to parse metadata' });
             }
           }
         } else {
           if (useFlatPlaylist) {
-            fetchMetadata(false)
+            fetchMetadata(false);
           } else {
-            resolve({ success: false, message: errorOutput || 'Could not fetch metadata' })
+            resolve({ success: false, message: errorOutput || 'Could not fetch metadata' });
           }
         }
-      })
+      });
     }
 
     try {
@@ -229,12 +298,6 @@ ipcMain.handle('download-batch', async (event, { videos, qualityPreference }) =>
     fs.mkdirSync(downloadsPath, { recursive: true })
   }
 
-  const ytDlpConstants = require('yt-dlp-exec/src/constants')
-  let ytDlpPath = path.normalize(ytDlpConstants.YOUTUBE_DL_PATH)
-  if (app.isPackaged) {
-    ytDlpPath = ytDlpPath.replace(/[\\/]app\.asar[\\/]/i, (match) => match.replace('app.asar', 'app.asar.unpacked'))
-  }
-
   // Quality preference logic
   const height = qualityPreference || '1080'
   const filter = `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
@@ -243,19 +306,27 @@ ipcMain.handle('download-batch', async (event, { videos, qualityPreference }) =>
   const total = videos.length
 
   for (const video of videos) {
-    const outputTemplate = join(downloadsPath, `${video.title}.%(ext)s`)
+    const safeTitle = sanitizeFilename(video.title)
+    const outputTemplate = join(downloadsPath, `${safeTitle}.%(ext)s`)
     
     await new Promise((resolve) => {
       try {
-        const process = spawn(ytDlpPath, [
+        const args = [
           video.url,
           '-f', filter,
           '-o', outputTemplate,
           '--no-check-certificate',
           '--no-warnings',
           '--progress',
+          '--ffmpeg-location', ffmpegPath,
           '--extractor-args', 'youtube:player_client=android,web'
-        ])
+        ]
+
+        if (video.index) {
+          args.push('--playlist-items', String(video.index))
+        }
+
+        const process = spawn(ytDlpPath, args)
 
         process.stdout.on('data', (data) => {
           const text = data.toString()
