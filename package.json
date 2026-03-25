@@ -1,6 +1,6 @@
 {
   "name": "dplus",
-  "version": "1.1.1",
+  "version": "1.2.5",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

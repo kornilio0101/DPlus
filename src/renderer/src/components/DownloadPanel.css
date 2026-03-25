@@ -367,6 +367,34 @@ button:disabled {
 .naming-single input {
   width: 100%;
   box-sizing: border-box;
+  margin-bottom: 12px;
+}
+
+.quality-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.quality-row label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+}
+
+.quality-row select {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: white;
+  outline: none;
+  cursor: pointer;
 }
 
 .naming-batch {
@@ -408,10 +436,32 @@ button:disabled {
   object-fit: cover;
 }
 
-.naming-row input {
+.naming-fields {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.naming-fields input {
   flex: 1;
   padding: 10px 14px;
   font-size: 0.85rem;
+  min-width: 0;
+}
+
+.quality-select {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: white;
+  outline: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  width: 140px;
 }
 
 a {

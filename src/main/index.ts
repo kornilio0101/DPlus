@@ -67,8 +67,8 @@ app.on('window-all-closed', () => {
 
 
 // IPC handlers for downloading
-ipcMain.handle('download-video', async (event, { url, filename, format }) => {
-  console.log('Download requested for:', url, 'with filename:', filename, 'format:', format)
+ipcMain.handle('download-video', async (event, { url, filename, format, qualityPreference }) => {
+  console.log('Download requested for:', url, 'with filename:', filename, 'format:', format, 'quality:', qualityPreference)
   
   const now = new Date()
   const dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`
@@ -90,8 +90,17 @@ ipcMain.handle('download-video', async (event, { url, filename, format }) => {
     ? join(downloadsPath, `${safeFilename}.%(ext)s`)
     : join(downloadsPath, '%(title)s.%(ext)s')
 
-  // Use selected format or best quality
-  const formatArg = format || 'bestvideo+bestaudio/best'
+  // Use selected format, or quality preference, or best
+  let formatArg: string
+  if (format) {
+    // A specific format ID like '313' (4K video only) needs '+bestaudio' appended so yt-dlp grabs audio too
+    formatArg = `${format}+bestaudio/best`
+  } else if (qualityPreference) {
+    formatArg = `bestvideo[height<=${qualityPreference}]+bestaudio/best[height<=${qualityPreference}]`
+  } else {
+    formatArg = 'bestvideo+bestaudio/best'
+  }
+
 
   return new Promise((resolve) => {
     try {
@@ -103,7 +112,7 @@ ipcMain.handle('download-video', async (event, { url, filename, format }) => {
         '--no-warnings',
         '--progress',
         '--ffmpeg-location', ffmpegPath,
-        '--extractor-args', 'youtube:player_client=android,web'
+        '--merge-output-format', 'mp4'
       ])
 
       process.on('error', (err) => {
@@ -148,7 +157,7 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
 
   return new Promise((resolve) => {
     const fetchMetadata = (useFlatPlaylist: boolean) => {
-      const args = [url, '-j', '--no-check-certificate', '--dump-single-json', '--extractor-args', 'youtube:player_client=android,web']
+      const args = [url, '-j', '--no-check-certificate', '--dump-single-json']
       if (useFlatPlaylist) {
         args.push('--flat-playlist')
       }
@@ -246,10 +255,10 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
               } else {
                 // Single video or playlist with no entries treated as single
                 const formats = (data.formats || [])
-                  .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple')
+                  .filter((f: any) => f.vcodec !== 'none' && f.resolution !== 'multiple' && f.ext === 'mp4')
                   .map((f: any) => ({
                     id: f.format_id as string,
-                    label: (f.resolution || f.format_note || f.format) as string,
+                    label: `${f.resolution || f.format_note} ${f.fps && f.fps > 30 ? f.fps + 'fps ' : ''}(${f.vcodec ? f.vcodec.split('.')[0] : 'mp4'})`.trim() as string,
                     ext: f.ext as string,
                     filesize: f.filesize as number
                   }))
@@ -289,7 +298,7 @@ ipcMain.handle('get-video-metadata', async (_event, url) => {
   })
 })
 
-ipcMain.handle('download-batch', async (event, { videos, qualityPreference }) => {
+ipcMain.handle('download-batch', async (event, { videos }) => {
   const now = new Date()
   const dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).slice(-2)}`
   const downloadsPath = join(app.getPath('downloads'), 'DPlus', dateStr)
@@ -298,16 +307,16 @@ ipcMain.handle('download-batch', async (event, { videos, qualityPreference }) =>
     fs.mkdirSync(downloadsPath, { recursive: true })
   }
 
-  // Quality preference logic
-  const height = qualityPreference || '1080'
-  const filter = `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
-
   let completed = 0
   const total = videos.length
 
   for (const video of videos) {
     const safeTitle = sanitizeFilename(video.title)
     const outputTemplate = join(downloadsPath, `${safeTitle}.%(ext)s`)
+    // qualityPreference can be 'best1080', 'best720', etc. from the fallback presets
+    const rawQuality = video.qualityPreference || 'best1080'
+    const height = rawQuality.replace('best', '') || '1080'
+    const filter = `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`
     
     await new Promise((resolve) => {
       try {
@@ -319,7 +328,7 @@ ipcMain.handle('download-batch', async (event, { videos, qualityPreference }) =>
           '--no-warnings',
           '--progress',
           '--ffmpeg-location', ffmpegPath,
-          '--extractor-args', 'youtube:player_client=android,web'
+          '--merge-output-format', 'mp4'
         ]
 
         if (video.index) {

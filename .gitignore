@@ -2,7 +2,14 @@ node_modules
 dist
 out
 .electron-vite
-*.log
 .DS_Store
 build/icon.png
-# Keep only source and config
+
+# Experimental/Test Files
+test*.js
+test_downloads/
+test_format.json
+
+# Logs
+*.log
+!verbose.log

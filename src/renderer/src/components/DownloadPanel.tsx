@@ -11,6 +11,21 @@ interface VideoEntry {
   index?: number
 }
 
+interface FormatOption {
+  id: string
+  label: string
+  ext: string
+}
+
+const FALLBACK_QUALITIES: FormatOption[] = [
+  { id: 'best2160', label: '4K (2160p) [Fallback]', ext: 'mp4' },
+  { id: 'best1440', label: '2K (1440p) [Fallback]', ext: 'mp4' },
+  { id: 'best1080', label: '1080p [Fallback]', ext: 'mp4' },
+  { id: 'best720', label: '720p [Fallback]', ext: 'mp4' },
+  { id: 'best480', label: '480p [Fallback]', ext: 'mp4' },
+  { id: 'best360', label: '360p [Fallback]', ext: 'mp4' },
+]
+
 const DownloadPanel: React.FC = () => {
   const [screen, setScreen] = useState<Screen>('url')
   const [url, setUrl] = useState('')
@@ -22,15 +37,15 @@ const DownloadPanel: React.FC = () => {
   const [isPlaylist, setIsPlaylist] = useState(false)
   const [playlistEntries, setPlaylistEntries] = useState<VideoEntry[]>([])
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set())
-  const [qualityPreference, setQualityPreference] = useState('1080')
 
-  // Single video
-  const [formats, setFormats] = useState<{ id: string; label: string; ext: string }[]>([])
+  // Single video - real formats from backend
+  const [formats, setFormats] = useState<FormatOption[]>([])
   const [selectedFormat, setSelectedFormat] = useState<string>('')
   const [filename, setFilename] = useState('')
 
-  // Batch naming
+  // Batch naming & quality
   const [videoNames, setVideoNames] = useState<Record<string, string>>({})
+  const [videoQualities, setVideoQualities] = useState<Record<string, string>>({})
 
   const filenameInputRef = useRef<HTMLInputElement>(null)
 
@@ -61,7 +76,6 @@ const DownloadPanel: React.FC = () => {
       const result = await (window as any).ipcRenderer.invoke('get-video-metadata', url)
       if (result.success) {
         if (result.isPlaylist && result.entries && result.entries.length > 1) {
-          // Multiple videos — show selection screen
           setIsPlaylist(true)
           setPlaylistEntries(result.entries)
           setSelectedVideoIds(new Set(result.entries.map((e: any) => e.id)))
@@ -73,11 +87,17 @@ const DownloadPanel: React.FC = () => {
           setPlaylistEntries([entry])
           setSelectedVideoIds(new Set([entry.id]))
           setVideoNames({ [entry.id]: entry.title })
+          // Use fallback qualities for playlist-detected singles
+          setVideoQualities({ [entry.id]: 'best1080' })
           setScreen('naming')
         } else {
-          // Single video
+          // Single video — use real fetched formats
           setIsPlaylist(false)
-          setFormats(result.formats)
+          const realFormats: FormatOption[] = (result.formats && result.formats.length > 0)
+            ? result.formats
+            : FALLBACK_QUALITIES
+          setFormats(realFormats)
+          setSelectedFormat(realFormats[0]?.id || '')
           setFilename(result.title)
           setScreen('naming')
         }
@@ -103,12 +123,16 @@ const DownloadPanel: React.FC = () => {
   }
 
   const goToNaming = () => {
-    // Initialize names from selected videos
     const names: Record<string, string> = {}
+    const qualities: Record<string, string> = {}
     playlistEntries
       .filter(e => selectedVideoIds.has(e.id))
-      .forEach(e => { names[e.id] = e.title })
+      .forEach(e => {
+        names[e.id] = e.title
+        qualities[e.id] = videoQualities[e.id] || 'best1080'
+      })
     setVideoNames(names)
+    setVideoQualities(qualities)
     setScreen('naming')
   }
 
@@ -122,13 +146,13 @@ const DownloadPanel: React.FC = () => {
       .filter(e => selectedVideoIds.has(e.id))
       .map(e => ({
         ...e,
-        title: videoNames[e.id] || e.title
+        title: videoNames[e.id] || e.title,
+        qualityPreference: videoQualities[e.id] || 'best1080'
       }))
 
     try {
       const result = await (window as any).ipcRenderer.invoke('download-batch', {
-        videos: selectedVideos,
-        qualityPreference
+        videos: selectedVideos
       })
       if (result.success) {
         setStatus('success')
@@ -153,11 +177,16 @@ const DownloadPanel: React.FC = () => {
 
     const finalFilename = (filename === 'Fetching title...') ? '' : filename
 
+    // Determine if selectedFormat is a real format ID or a fallback
+    const isFallback = selectedFormat.startsWith('best')
+    const heightFromFallback = isFallback ? selectedFormat.replace('best', '') : null
+
     try {
       const result = await (window as any).ipcRenderer.invoke('download-video', {
         url,
         filename: finalFilename,
-        format: selectedFormat
+        format: isFallback ? '' : selectedFormat,
+        qualityPreference: heightFromFallback || ''
       })
       if (result.success) {
         setStatus('success')
@@ -248,17 +277,6 @@ const DownloadPanel: React.FC = () => {
         <h3 className="screen-title">Select Videos to Download</h3>
 
         <div className="playlist-controls">
-          <div className="quality-pref">
-            <label>Quality:</label>
-            <select value={qualityPreference} onChange={(e) => setQualityPreference(e.target.value)}>
-              <option value="2160">4K (2160p)</option>
-              <option value="1440">2K (1440p)</option>
-              <option value="1080">Full HD (1080p)</option>
-              <option value="720">HD (720p)</option>
-              <option value="480">480p</option>
-              <option value="360">360p</option>
-            </select>
-          </div>
           <div className="selection-actions">
             <button onClick={() => setSelectedVideoIds(new Set(playlistEntries.map(e => e.id)))}>Select All</button>
             <button onClick={() => setSelectedVideoIds(new Set())}>Deselect All</button>
@@ -301,18 +319,20 @@ const DownloadPanel: React.FC = () => {
     )
   }
 
-  // Screen 3: Naming
+  // Screen 3: Naming + Quality
   if (screen === 'naming') {
     const isSingle = !isPlaylist
     const selectedEntries = playlistEntries.filter(e => selectedVideoIds.has(e.id))
 
     return (
       <div className="download-panel screen-panel">
-        <h3 className="screen-title">{isSingle ? 'Save File As' : `Name ${selectedEntries.length} Video${selectedEntries.length > 1 ? 's' : ''}`}</h3>
+        <h3 className="screen-title">
+          {isSingle ? 'Save File As' : `Configure ${selectedEntries.length} Video${selectedEntries.length > 1 ? 's' : ''}`}
+        </h3>
 
         {isSingle ? (
           <div className="naming-single">
-            <p className="naming-hint">Enter a preferred name for your video</p>
+            <p className="naming-hint">Enter a preferred name and choose quality</p>
             <input
               ref={filenameInputRef}
               type="text"
@@ -321,6 +341,16 @@ const DownloadPanel: React.FC = () => {
               onChange={(e) => setFilename(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && confirmSingleDownload()}
             />
+            <div className="quality-row">
+              <label>Quality:</label>
+              <select value={selectedFormat} onChange={(e) => setSelectedFormat(e.target.value)}>
+                {formats.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.label} ({f.ext})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         ) : (
           <div className="naming-batch">
@@ -333,12 +363,24 @@ const DownloadPanel: React.FC = () => {
                     <div className="thumb-placeholder small">🎬</div>
                   )}
                 </div>
-                <input
-                  type="text"
-                  value={videoNames[video.id] || ''}
-                  onChange={(e) => setVideoNames(prev => ({ ...prev, [video.id]: e.target.value }))}
-                  placeholder="Video name..."
-                />
+                <div className="naming-fields">
+                  <input
+                    type="text"
+                    value={videoNames[video.id] || ''}
+                    onChange={(e) => setVideoNames(prev => ({ ...prev, [video.id]: e.target.value }))}
+                    placeholder="Video name..."
+                  />
+                  <select
+                    className="quality-select"
+                    value={videoQualities[video.id] || 'best1080'}
+                    onChange={(e) => setVideoQualities(prev => ({ ...prev, [video.id]: e.target.value }))}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {FALLBACK_QUALITIES.map(q => (
+                      <option key={q.id} value={q.id}>{q.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             ))}
           </div>
